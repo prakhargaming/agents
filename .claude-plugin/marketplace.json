@@ -4,23 +4,18 @@
     "name": "Prakhar Sinha"
   },
   "metadata": {
-    "description": "Personal skills and upstream pstack and Ponytail."
+    "description": "Harness-specific skills and upstream pstack and Ponytail."
   },
   "plugins": [
     {
-      "name": "prakhar-personal",
-      "source": "./plugins/personal",
-      "description": "Prakhar\u2019s personal skills"
-    },
-    {
       "name": "review-with-codex",
       "source": "./plugins/claude",
-      "description": "Prakhar\u2019s claude skills"
+      "description": "Prakhar’s claude skills"
     },
     {
       "name": "peer-review-for-codex",
       "source": "./plugins/codex",
-      "description": "Prakhar\u2019s codex skills"
+      "description": "Prakhar’s codex skills"
     },
     {
       "name": "pstack",
