@@ -2,3 +2,7 @@
 	path = upstream/cursor-plugins
 	url = https://github.com/cursor/plugins.git
 	branch = main
+[submodule "upstream/ponytail"]
+	path = upstream/ponytail
+	url = https://github.com/dietrichgebert/ponytail.git
+	branch = main

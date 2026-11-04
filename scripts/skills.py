@@ -6,7 +6,10 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM = ROOT / 'upstream/cursor-plugins'
+UPSTREAMS = {
+    'pstack': ROOT / 'upstream/cursor-plugins',
+    'ponytail': ROOT / 'upstream/ponytail',
+}
 CATALOG = ROOT / '.claude-plugin/marketplace.json'
 
 
@@ -19,12 +22,13 @@ def discover(directory):
 
 
 def link_skills(home):
-    shared = discover(UPSTREAM / 'pstack/skills')
-    personal = discover(ROOT / 'plugins/personal/skills')
-    overlap = shared.keys() & personal.keys()
-    if overlap:
-        raise SystemExit(f'Personal skills conflict with upstream: {sorted(overlap)}')
-    shared.update(personal)
+    shared = {}
+    for directory in [UPSTREAMS['pstack'] / 'pstack/skills', UPSTREAMS['ponytail'] / 'skills', ROOT / 'plugins/personal/skills']:
+        skills = discover(directory)
+        overlap = shared.keys() & skills.keys()
+        if overlap:
+            raise SystemExit(f'Duplicate shared skills in {directory}: {sorted(overlap)}')
+        shared.update(skills)
     links = {ROOT / 'skills' / name: source for name, source in shared.items()}
     for harness in ['claude', 'codex']:
         targets = {name: ROOT / 'skills' / name for name in shared}
@@ -48,35 +52,36 @@ def link_skills(home):
             if dest in links or not dest.is_symlink():
                 continue
             target = dest.resolve()
-            if target.is_relative_to(ROOT / 'skills') or target.is_relative_to(UPSTREAM / 'pstack/skills'):
+            if target.is_relative_to(ROOT / 'skills') or any(target.is_relative_to(path) for path in [UPSTREAMS['pstack'] / 'pstack/skills', UPSTREAMS['ponytail'] / 'skills']):
                 dest.unlink()
     print(f'Linked {len(shared)} shared skills and harness-specific skills.')
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Install shared skills or update the pstack pin.')
+    parser = argparse.ArgumentParser(description='Install shared skills or update an upstream pin.')
     parser.add_argument('command', choices=['install', 'update'])
+    parser.add_argument('--upstream', choices=UPSTREAMS, default='pstack', help='Upstream to update (default: pstack)')
     parser.add_argument('--home', type=Path, default=Path.home(), help='Harness home directory')
     args = parser.parse_args()
-    if (UPSTREAM / '.git').exists() and git('status', '--porcelain', cwd=UPSTREAM):
-        raise SystemExit('Commit or discard changes inside the upstream checkout before installation.')
-    git('submodule', 'update', '--init', '--depth', '1', '--', 'upstream/cursor-plugins')
-    git('sparse-checkout', 'set', 'pstack', cwd=UPSTREAM)
+    for name, path in UPSTREAMS.items():
+        if (path / '.git').exists() and git('status', '--porcelain', cwd=path):
+            raise SystemExit(f'Commit or discard changes inside {name} before installation.')
+        git('submodule', 'update', '--init', '--depth', '1', '--', str(path.relative_to(ROOT)))
+    git('sparse-checkout', 'set', 'pstack', cwd=UPSTREAMS['pstack'])
     catalog = json.loads(CATALOG.read_text())
-    pstack = next(p for p in catalog['plugins'] if p['name'] == 'pstack')
-    if args.command == 'update':
-        if git('status', '--porcelain', cwd=UPSTREAM):
-            raise SystemExit('Commit or discard changes inside the upstream checkout before updating.')
-        git('fetch', '--depth', '1', 'origin', 'main', cwd=UPSTREAM)
-        git('checkout', '--detach', 'FETCH_HEAD', cwd=UPSTREAM)
-        pstack['source']['sha'] = git('rev-parse', 'HEAD', cwd=UPSTREAM)
-        CATALOG.write_text(json.dumps(catalog, indent=2) + '\n')
-    actual = git('rev-parse', 'HEAD', cwd=UPSTREAM)
-    if actual != pstack['source']['sha']:
-        raise SystemExit('The marketplace pin and submodule differ. Restore both from the same commit.')
+    for name, path in UPSTREAMS.items():
+        plugin = next(p for p in catalog['plugins'] if p['name'] == name)
+        if args.command == 'update' and args.upstream == name:
+            git('fetch', '--depth', '1', 'origin', 'main', cwd=path)
+            git('checkout', '--detach', 'FETCH_HEAD', cwd=path)
+            plugin['source']['sha'] = git('rev-parse', 'HEAD', cwd=path)
+            CATALOG.write_text(json.dumps(catalog, indent=2) + '\n')
+        actual = git('rev-parse', 'HEAD', cwd=path)
+        if actual != plugin['source']['sha']:
+            raise SystemExit(f'The {name} marketplace pin and submodule differ. Restore both from the same commit.')
     link_skills(args.home.expanduser().resolve())
     if args.command == 'update':
-        print('Review and commit .claude-plugin/marketplace.json and upstream/cursor-plugins together.')
+        print(f'Review and commit .claude-plugin/marketplace.json and {UPSTREAMS[args.upstream].relative_to(ROOT)} together.')
 
 
 if __name__ == '__main__':
